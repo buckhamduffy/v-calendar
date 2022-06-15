@@ -1,13 +1,14 @@
 <template>
   <div class="vc-select">
-    <select v-bind="$attrs" @change="$emit('input', $event.target.value)">
+    <select v-model="model" v-bind="$attrs">
       <option
         v-for="option in options"
         :key="option.value"
         :value="option.value"
         :disabled="option.disabled"
-        >{{ option.label }}</option
       >
+        {{ option.label }}
+      </option>
     </select>
     <div class="vc-select-arrow">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
@@ -24,6 +25,17 @@ export default {
   inheritAttrs: false,
   props: {
     options: Array,
+    value: Number,
+  },
+  computed: {
+    model: {
+      get() {
+        return this.value;
+      },
+      set(value) {
+        this.$emit('input', value);
+      },
+    },
   },
 };
 </script>
@@ -50,6 +62,7 @@ export default {
     text-indent: 0px;
     cursor: pointer;
     -moz-padding-start: 3px;
+    background-image: none;
     &:hover {
       color: var(--gray-600);
     }

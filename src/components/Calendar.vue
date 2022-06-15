@@ -406,7 +406,7 @@ export default {
   mounted() {
     if (!this.disablePageSwipe) {
       // Add swipe handler to move to next and previous pages
-      const removeHandlers = addHorizontalSwipeHandler(
+      this.removeHandlers = addHorizontalSwipeHandler(
         this.$refs.container,
         ({ toLeft, toRight }) => {
           if (toLeft) {
@@ -417,9 +417,14 @@ export default {
         },
         this.$defaults.touch,
       );
-      // Clean up on destroy
-      this.$once('beforeDestroy', () => removeHandlers());
     }
+  },
+  destroyed() {
+    this.pages = [];
+    this.store.destroy();
+    this.store = null;
+    this.sharedState = null;
+    if (this.removeHandlers) this.removeHandlers();
   },
   methods: {
     refreshLocale() {

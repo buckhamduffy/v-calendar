@@ -3,7 +3,6 @@ import Calendar from './Calendar';
 import Popover from './Popover';
 import TimePicker from './TimePicker';
 import { rootMixin } from '../utils/mixins';
-import { addTapOrClickHandler } from '../utils/touch';
 import {
   datesAreEqual,
   createGuid,
@@ -21,20 +20,13 @@ import {
 } from '../utils/popovers';
 import { PATCH } from '../utils/locale';
 
-const _dateConfig = {
+const _baseConfig = {
   type: 'auto',
   mask: 'iso', // String mask when `type === 'string'`
   timeAdjust: '', // 'HH:MM:SS', 'now'
 };
 
-const _rangeConfig = {
-  start: {
-    ..._dateConfig,
-  },
-  end: {
-    ..._dateConfig,
-  },
-};
+const _config = [_baseConfig, _baseConfig];
 
 const MODE = {
   DATE: 'date',
@@ -57,8 +49,16 @@ export default {
       if (!this.dateParts) return null;
       const parts = this.isRange ? this.dateParts : [this.dateParts[0]];
       return h('div', [
-        ...parts.map((dp, idx) =>
-          h(TimePicker, {
+        ...parts.map((dp, idx) => {
+          const hourOptions = this.$locale.getHourOptions(
+            this.modelConfig_[idx].validHours,
+            dp,
+          );
+          const minuteOptions = this.$locale.getMinuteOptions(
+            this.modelConfig_[idx].minuteIncrement,
+            dp,
+          );
+          return h(TimePicker, {
             props: {
               value: dp,
               locale: this.$locale,
@@ -67,10 +67,12 @@ export default {
               minuteIncrement: this.minuteIncrement,
               showBorder: !this.isTime,
               isDisabled: (this.isDateTime && !dp.isValid) || this.isDragging,
+              hourOptions,
+              minuteOptions,
             },
             on: { input: p => this.onTimeInput(p, idx === 0) },
-          }),
-        ),
+          });
+        }),
         this.$scopedSlots.footer && this.$scopedSlots.footer(),
       ]);
     };
@@ -152,7 +154,7 @@ export default {
   props: {
     mode: { type: String, default: MODE.DATE },
     value: { type: null, required: true },
-    modelConfig: { type: Object, default: () => ({ ..._dateConfig }) },
+    modelConfig: { type: Object, default: () => ({}) },
     is24hr: Boolean,
     minuteIncrement: Number,
     isRequired: Boolean,
@@ -163,6 +165,7 @@ export default {
     dragAttribute: Object,
     selectAttribute: Object,
     attributes: Array,
+    validHours: [Object, Array, Function],
   },
   data() {
     return {
@@ -193,22 +196,10 @@ export default {
       return this.mode.toLowerCase() === MODE.TIME;
     },
     isDragging() {
-      return !!this.dragValue;
+      return !!this.dragValue && this.isRange;
     },
     modelConfig_() {
-      if (this.isRange) {
-        return {
-          start: {
-            ..._rangeConfig.start,
-            ...(this.modelConfig.start || this.modelConfig),
-          },
-          end: {
-            ..._rangeConfig.end,
-            ...(this.modelConfig.end || this.modelConfig),
-          },
-        };
-      }
-      return { ..._dateConfig, ...this.modelConfig };
+      return this.normalizeConfig(this.modelConfig, _config);
     },
     inputMask() {
       const masks = this.$locale.masks;
@@ -330,9 +321,9 @@ export default {
     inputMask() {
       this.formatInput();
     },
-    value() {
+    value(newValue) {
       if (!this.watchValue) return;
-      this.forceUpdateValue(this.value, {
+      this.forceUpdateValue(newValue, {
         config: this.modelConfig_,
         notify: false,
         formatInput: true,
@@ -347,13 +338,18 @@ export default {
     },
     timezone() {
       this.refreshDateParts();
-      this.forceUpdateValue(this.value_, { notify: true, formatInput: true });
+      this.forceUpdateValue(this.value_, { formatInput: true });
     },
   },
   created() {
+    this.value_ = this.normalizeValue(
+      this.value,
+      this.modelConfig_,
+      PATCH.DATE_TIME,
+      RANGE_PRIORITY.BOTH,
+    );
     this.forceUpdateValue(this.value, {
       config: this.modelConfig_,
-      notify: false,
       formatInput: true,
       hidePopover: false,
     });
@@ -363,20 +359,11 @@ export default {
     // Handle escape key presses
     on(document, 'keydown', this.onDocumentKeyDown);
     // Clear drag on background click
-    const offTapOrClickHandler = addTapOrClickHandler(document, e => {
-      if (
-        document.body.contains(e.target) &&
-        !elementContains(this.$el, e.target)
-      ) {
-        this.dragValue = null;
-        this.formatInput();
-      }
-    });
-    // Clean up handlers
-    this.$once('beforeDestroy', () => {
-      off(document, 'keydown', this.onDocumentKeyDown);
-      offTapOrClickHandler();
-    });
+    on(document, 'click', this.onDocumentClick);
+  },
+  destroyed() {
+    off(document, 'keydown', this.onDocumentKeyDown);
+    off(document, 'click', this.onDocumentClick);
   },
   methods: {
     getDateParts(date) {
@@ -400,7 +387,11 @@ export default {
           dateParts.push({});
         }
       } else if (value) {
-        dateParts.push(this.getDateParts(value));
+        if (value && value.start) {
+          dateParts.push(this.getDateParts(value.start));
+        } else {
+          dateParts.push(this.getDateParts(value));
+        }
       } else {
         dateParts.push({});
       }
@@ -410,6 +401,15 @@ export default {
       // Clear drag on escape keydown
       if (this.dragValue && e.key === 'Escape') {
         this.dragValue = null;
+      }
+    },
+    onDocumentClick(e) {
+      if (
+        document.body.contains(e.target) &&
+        !elementContains(this.$el, e.target)
+      ) {
+        this.dragValue = null;
+        this.formatInput();
       }
     },
     onDayClick(day) {
@@ -531,6 +531,17 @@ export default {
         hidePopover: true,
       });
     },
+    normalizeConfig(config, baseConfig = this.modelConfig_) {
+      config = isArray(config)
+        ? config
+        : [config.start || config, config.end || config];
+      return baseConfig.map((b, i) => ({
+        validHours: this.validHours,
+        minuteIncrement: this.minuteIncrement,
+        ...b,
+        ...config[i],
+      }));
+    },
     updateValue(value, opts = {}) {
       clearTimeout(this.updateTimeout);
       return new Promise(resolve => {
@@ -551,16 +562,15 @@ export default {
       {
         config = this.modelConfig_,
         patch = PATCH.DATE_TIME,
-        notify = true,
         clearIfEqual = false,
         formatInput = true,
         hidePopover = false,
-        adjustTime = false,
         isDragging = this.isDragging,
         rangePriority = RANGE_PRIORITY.BOTH,
       } = {},
     ) {
       // 1. Normalization
+      config = this.normalizeConfig(config);
       let normalizedValue = this.normalizeValue(
         value,
         config,
@@ -574,9 +584,7 @@ export default {
       }
 
       // Time Adjustment
-      if (adjustTime) {
-        normalizedValue = this.adjustTimeForValue(normalizedValue, config);
-      }
+      normalizedValue = this.adjustTimeForValue(normalizedValue, config);
 
       // 2. Validation (date or range)
       const isDisabled = this.valueIsDisabled(normalizedValue);
@@ -602,13 +610,9 @@ export default {
         this.$set(this, valueKey, normalizedValue);
         // Clear drag value if needed
         if (!isDragging) this.dragValue = null;
-      }
-
-      // 4. Denormalization/Notification
-      if (notify && valueChanged) {
-        // 4A. Denormalization
+        // Denormalization
         const denormalizedValue = this.denormalizeValue(normalizedValue);
-        // 4B. Notification
+        // Notification
         const event = this.isDragging ? 'drag' : 'input';
         this.watchValue = false;
         this.$emit(event, denormalizedValue);
@@ -623,7 +627,7 @@ export default {
     },
     hasValue(value) {
       if (this.isRange) {
-        return isObject(value) && value.start && value.end;
+        return isObject(value) && !!value.start && !!value.end;
       }
       return !!value;
     },
@@ -632,29 +636,22 @@ export default {
       if (this.isRange) {
         const result = {};
         const start = value.start > value.end ? value.end : value.start;
-        const startFillDate =
-          (this.value_ && this.value_.start) ||
-          this.modelConfig_.start.fillDate;
-        const startConfig = config.start || config;
         result.start = this.normalizeDate(start, {
-          ...startConfig,
-          fillDate: startFillDate,
+          ...config[0],
+          fillDate: (this.value_ && this.value_.start) || config[0].fillDate,
           patch,
         });
         const end = value.start > value.end ? value.start : value.end;
-        const endFillDate =
-          (this.value_ && this.value_.end) || this.modelConfig_.end.fillDate;
-        const endConfig = config.end || config;
         result.end = this.normalizeDate(end, {
-          ...endConfig,
-          fillDate: endFillDate,
+          ...config[1],
+          fillDate: (this.value_ && this.value_.end) || config[1].fillDate,
           patch,
         });
         return this.sortRange(result, rangePriority);
       }
       return this.normalizeDate(value, {
-        ...config,
-        fillDate: this.value_ || this.modelConfig_.fillDate,
+        ...config[0],
+        fillDate: this.value_ || config[0].fillDate,
         patch,
       });
     },
@@ -662,14 +659,11 @@ export default {
       if (!this.hasValue(value)) return null;
       if (this.isRange) {
         return {
-          start: this.$locale.adjustTimeForDate(
-            value.start,
-            config.start || config,
-          ),
-          end: this.$locale.adjustTimeForDate(value.end, config.end || config),
+          start: this.$locale.adjustTimeForDate(value.start, config[0]),
+          end: this.$locale.adjustTimeForDate(value.end, config[1]),
         };
       }
-      return this.$locale.adjustTimeForDate(value, config);
+      return this.$locale.adjustTimeForDate(value, config[0]);
     },
     sortRange(range, priority = RANGE_PRIORITY.NONE) {
       const { start, end } = range;
@@ -689,14 +683,11 @@ export default {
       if (this.isRange) {
         if (!this.hasValue(value)) return null;
         return {
-          start: this.$locale.denormalizeDate(
-            value.start,
-            config.start || config,
-          ),
-          end: this.$locale.denormalizeDate(value.end, config.end || config),
+          start: this.$locale.denormalizeDate(value.start, config[0]),
+          end: this.$locale.denormalizeDate(value.end, config[1]),
         };
       }
-      return this.$locale.denormalizeDate(value, config);
+      return this.$locale.denormalizeDate(value, config[0]);
     },
     valuesAreEqual(a, b) {
       if (this.isRange) {
@@ -717,13 +708,13 @@ export default {
     },
     formatInput() {
       this.$nextTick(() => {
-        const opts = {
+        const config = this.normalizeConfig({
           type: 'string',
           mask: this.inputMask,
-        };
+        });
         const value = this.denormalizeValue(
           this.dragValue || this.value_,
-          opts,
+          config,
         );
         if (this.isRange) {
           this.inputValues = [value && value.start, value && value.end];
