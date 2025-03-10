@@ -1,4 +1,10 @@
 - - -
+## v0.1.1 - 2025-03-10
+#### Bug Fixes
+- release flow use yarn - (515c865) - Aaron Florey
+
+- - -
+
 ## v0.1.0 - 2025-03-10
 #### Bug Fixes
 - upgrade packages, add release flow - (ebbb93b) - Aaron Florey
