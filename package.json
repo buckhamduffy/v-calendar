@@ -1,6 +1,6 @@
 {
   "name": "@buckhamduffy/v-calendar",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "A clean and extendable plugin for building simple attributed calendars in Vue.js.",
   "author": "Nathan Reyes <nathanreyes@me.com>",

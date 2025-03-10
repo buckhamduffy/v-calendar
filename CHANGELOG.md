@@ -1,4 +1,10 @@
 - - -
+## v0.1.2 - 2025-03-10
+#### Bug Fixes
+- change node version for building - (1235dbb) - Aaron Florey
+
+- - -
+
 ## v0.1.1 - 2025-03-10
 #### Bug Fixes
 - release flow use yarn - (515c865) - Aaron Florey
